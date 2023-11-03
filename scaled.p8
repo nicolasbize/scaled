@@ -1,388 +1,12 @@
 pico-8 cartridge // http://www.pico-8.com
 version 41
 __lua__
-#include math.lua
+#include utils.lua
 #include collision.lua
-
---sfx
-snd=
-{
-	jump=1,
-}
-
---music tracks
-mus=
-{
-
-}
-
---objects
---------------------------------
-
---make the player
-function m_player(x,y)
-
-	--todo: refactor with m_vec.
-	local p=
-	{
-		x=x,  -- position
-		y=y,
-		dx=0, -- velocity
-		dy=0,
-		w=8,  -- sprite size
-		h=8,
-		
-		max_dx=1, --max x speed
-		max_dy=2, --max y speed
-
-		jump_speed=-1.75,--jump veloclity
-		acc=0.05,--acceleration
-		dcc=0.8,--decceleration
-		air_dcc=1,--air decceleration
-		grav=0.15,
-		
-		--helper for more complex
-		--button press tracking.
-		--todo: generalize button index.
-		jump_button=
-		{
-			update=function(self)
-				--start with assumption
-				--that not a new press.
-				self.is_pressed=false
-				if btn(5) then
-					if not self.is_down then
-						self.is_pressed=true
-					end
-					self.is_down=true
-					self.ticks_down+=1
-				else
-					self.is_down=false
-					self.is_pressed=false
-					self.ticks_down=0
-				end
-			end,
-			--state
-			is_pressed=false,--pressed this frame
-			is_down=false,--currently down
-			ticks_down=0,--how long down
-		},
-
-		jump_hold_time=0,--how long jump is held
-		min_jump_press=5,--min time jump can be held
-		max_jump_press=15,--max time jump can be held
-
-		jump_btn_released=true,--can we jump again?
-		grounded=false,--on ground
-
-		airtime=0,--time since grounded
-		
-		--animation definitions.
-		--use with set_anim()
-		anims=
-		{
-			["stand"]=
-			{
-				ticks=30,--how long is each frame shown.
-				frames={0,1},--what frames are shown.
-			},
-			["walk"]=
-			{
-				ticks=5,
-				frames={2,3,4,5},
-			},
-			["jump"]=
-			{
-				ticks=1,
-				frames={1},
-			},
-			["slide"]=
-			{
-				ticks=1,
-				frames={6},
-			},
-		},
-
-		curanim="walk",--currently playing animation
-		curframe=1,--curent frame of animation.
-		animtick=0,--ticks until next frame should show.
-		flipx=false,--show sprite be flipped.
-		
-		--request new animation to play.
-		set_anim=function(self,anim)
-			if(anim==self.curanim)return--early out.
-			local a=self.anims[anim]
-			self.animtick=a.ticks--ticks count down.
-			self.curanim=anim
-			self.curframe=1
-		end,
-		
-		--call once per tick.
-		update=function(self)
-	
-			--todo: kill enemies.
-			
-			--track button presses
-			local bl=btn(0) --left
-			local br=btn(1) --right
-			
-			--move left/right
-			if bl==true then
-				self.dx-=self.acc
-				br=false--handle double press
-			elseif br==true then
-				self.dx+=self.acc
-			else
-				if self.grounded then
-					self.dx*=self.dcc
-				else
-					self.dx*=self.air_dcc
-				end
-			end
-
-			--limit walk speed
-			self.dx=mid(-self.max_dx,self.dx,self.max_dx)
-			
-			--move in x
-			self.x+=self.dx
-			
-			--hit walls
-			collide_side(self)
-
-			--jump buttons
-			self.jump_button:update()
-			
-			--jump is complex.
-			--we allow jump if:
-			--	on ground
-			--	recently on ground
-			--	pressed btn right before landing
-			--also, jump velocity is
-			--not instant. it applies over
-			--multiple frames.
-			if self.jump_button.is_down then
-				--is player on ground recently.
-				--allow for jump right after 
-				--walking off ledge.
-				local on_ground=(self.grounded or self.airtime<5)
-				--was btn presses recently?
-				--allow for pressing right before
-				--hitting ground.
-				local new_jump_btn=self.jump_button.ticks_down<10
-				--is player continuing a jump
-				--or starting a new one?
-				if self.jump_hold_time>0 or (on_ground and new_jump_btn) then
-					if(self.jump_hold_time==0)sfx(snd.jump)--new jump snd
-					self.jump_hold_time+=1
-					--keep applying jump velocity
-					--until max jump time.
-					if self.jump_hold_time<self.max_jump_press then
-						self.dy=self.jump_speed--keep going up while held
-					end
-				end
-			else
-				self.jump_hold_time=0
-			end
-			
-			--move in y
-			self.dy+=self.grav
-			self.dy=mid(-self.max_dy,self.dy,self.max_dy)
-			self.y+=self.dy
-
-			--floor
-			if not collide_floor(self) then
-				self:set_anim("jump")
-				self.grounded=false
-				self.airtime+=1
-			end
-
-			--roof
-			collide_roof(self)
-
-			--handle playing correct animation when
-			--on the ground.
-			if self.grounded then
-				if br then
-					if self.dx<0 then
-						--pressing right but still moving left.
-						self:set_anim("slide")
-					else
-						self:set_anim("walk")
-					end
-				elseif bl then
-					if self.dx>0 then
-						--pressing left but still moving right.
-						self:set_anim("slide")
-					else
-						self:set_anim("walk")
-					end
-				else
-					self:set_anim("stand")
-				end
-			end
-
-			--flip
-			if br then
-				self.flipx=false
-			elseif bl then
-				self.flipx=true
-			end
-
-			--anim tick
-			self.animtick-=1
-			if self.animtick<=0 then
-				self.curframe+=1
-				local a=self.anims[self.curanim]
-				self.animtick=a.ticks--reset timer
-				if self.curframe>#a.frames then
-					self.curframe=1--loop
-				end
-			end
-
-		end,
-
-		--draw the player
-		draw=function(self)
-			local a=self.anims[self.curanim]
-			local frame=a.frames[self.curframe]
-			local offset=0
-			if frame == 2 then
-				offset=1
-			end
-			spr(frame,
-				self.x-(self.w/2),
-				self.y-(self.h/2) - offset,
-				self.w/8,self.h/8,
-				self.flipx,
-				false)
-		end,
-	}
-
-	return p
-end
-
---make the camera.
-function m_cam(target)
-	local c=
-	{
-		tar=target,--target to follow.
-		pos=m_vec(target.x,target.y),
-		
-		--how far from center of screen target must
-		--be before camera starts following.
-		--allows for movement in center without camera
-		--constantly moving.
-		pull_threshold=16,
-
-		--min and max positions of camera.
-		--the edges of the level.
-		pos_min=m_vec(64,64),
-		pos_max=m_vec(320,64),
-		
-		shake_remaining=0,
-		shake_force=0,
-
-		update=function(self)
-
-			self.shake_remaining=max(0,self.shake_remaining-1)
-			
-			--follow target outside of
-			--pull range.
-			if self:pull_max_x()<self.tar.x then
-				self.pos.x+=min(self.tar.x-self:pull_max_x(),4)
-			end
-			if self:pull_min_x()>self.tar.x then
-				self.pos.x+=min((self.tar.x-self:pull_min_x()),4)
-			end
-			if self:pull_max_y()<self.tar.y then
-				self.pos.y+=min(self.tar.y-self:pull_max_y(),4)
-			end
-			if self:pull_min_y()>self.tar.y then
-				self.pos.y+=min((self.tar.y-self:pull_min_y()),4)
-			end
-
-			--lock to edge
-			if(self.pos.x<self.pos_min.x)self.pos.x=self.pos_min.x
-			if(self.pos.x>self.pos_max.x)self.pos.x=self.pos_max.x
-			if(self.pos.y<self.pos_min.y)self.pos.y=self.pos_min.y
-			if(self.pos.y>self.pos_max.y)self.pos.y=self.pos_max.y
-		end,
-
-		cam_pos=function(self)
-			--calculate camera shake.
-			local shk=m_vec(0,0)
-			if self.shake_remaining>0 then
-				shk.x=rnd(self.shake_force)-(self.shake_force/2)
-				shk.y=rnd(self.shake_force)-(self.shake_force/2)
-			end
-			return self.pos.x-64+shk.x,self.pos.y-64+shk.y
-		end,
-
-		pull_max_x=function(self)
-			return self.pos.x+self.pull_threshold
-		end,
-
-		pull_min_x=function(self)
-			return self.pos.x-self.pull_threshold
-		end,
-
-		pull_max_y=function(self)
-			return self.pos.y+self.pull_threshold
-		end,
-
-		pull_min_y=function(self)
-			return self.pos.y-self.pull_threshold
-		end,
-		
-		shake=function(self,ticks,force)
-			self.shake_remaining=ticks
-			self.shake_force=force
-		end
-	}
-
-	return c
-end
-
---game flow
---------------------------------
-
---reset the game to its initial
---state. use this instead of
---_init()
-function reset()
-	ticks=0
-	p1=m_player(64,100)
-	p1:set_anim("walk")
-	cam=m_cam(p1)
-end
-
---p8 functions
---------------------------------
-
-function _init()
-	reset()
-end
-
-function _update60()
-	ticks+=1
-	p1:update()
-	cam:update()
-end
-
-function _draw()
-
-	cls(0)
-	
-	camera(cam:cam_pos())
-	
-	map(0,0,0,0,128,128)
-	
-	p1:draw()
-	
-	--hud
-	camera(0,0)
-
-end
+#include keyboard.lua
+#include player.lua
+#include camera.lua
+#include main.lua
 
 __gfx__
 00011100000000000001110000011100000000000001110001110000077700000000000008111800071117000001110000011100000111000001110000011100
@@ -425,14 +49,14 @@ __gfx__
 00000000211111111111111222122212212221221111111111111112212221222111111100000000000000000000000000000000000000000000000000000000
 00000000212221111112221211111112211111111111111111122212111111112122211100100000000000100000000000000000000000000000000000000000
 00000000111111111111111112221220022122211111111111111112222222222111111100000000000000000000000000000000000000000000000000000000
-00000000111111110000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000111111110000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000111111110000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000111111110000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000111111110000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000111111110000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000111111110000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000111111110000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000111111110888888000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000111111118ee0000800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000111111118e00000800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000111111118000000800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000111111118000000800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000111111118000000800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000011111111800000e800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000111111110888888000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
@@ -644,7 +268,7 @@ __label__
 00000000111111111111111111111111111111111111111111111111211111111111111211111111111111111111111111111111111111111111111111111111
 
 __gff__
-0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002010101010101010101010000000000000000000000000000000000000000000000000000000000000000000000000001010000000100000000000000000000
+0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002010101010101010101010000000000000005000000000000000000000000000000000000000000000000000000000001010000000100000000000000000000
 0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 __map__
 5151515151515151515151515151515151515151515151515151515151515171717171717171666666665151515151510000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
@@ -661,7 +285,7 @@ __map__
 465050505050506667626250506262484662626262626262765000484a460048465142666666665455666666664151480000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 4650606150505050506262606162624443626262626273414542004849460048465151426666666465666666415151480000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 4650505050505073746262626262627762626262627641515146004447434048465151514266666666666641515151480000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-4676505050507641426262626276626262626262744151515146007677007648465151515142667366664151515151480000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+4676505050507641426262625276626262626262744151515146007677007648465151515142667366664151515151480000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 4945454545454548464545454545454545454545454851515146454545454545514545454545454545454545454545000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 0000000000000000000000000000000000000000000000515151515151515151515151515151510000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 __sfx__
