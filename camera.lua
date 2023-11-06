@@ -2,7 +2,8 @@
 function create_camera(target)
 	return {
 		tar = target, --target to follow.
-		pos = vector2(target.x, target.y),
+		x = target.x,
+		y = target.y,
 
 		--how far from center of screen target must
 		--be before camera starts following.
@@ -24,21 +25,21 @@ function create_camera(target)
 
 			--follow target outside of pull range.
 			if self:pull_max_x() < self.tar.x then
-				self.pos.x += min(self.tar.x - self:pull_max_x(), 4)
+				self.x += min(self.tar.x - self:pull_max_x(), 4)
 			end
 			if self:pull_min_x() > self.tar.x then
-				self.pos.x += min((self.tar.x - self:pull_min_x()), 4)
+				self.x += min((self.tar.x - self:pull_min_x()), 4)
 			end
 			if self:pull_max_y() < self.tar.y then
-				self.pos.y += min(self.tar.y - self:pull_max_y(), 4)
+				self.y += min(self.tar.y - self:pull_max_y(), 4)
 			end
 			if self:pull_min_y() > self.tar.y then
-				self.pos.y += min((self.tar.y - self:pull_min_y()), 4)
+				self.y += min((self.tar.y - self:pull_min_y()), 4)
 			end
 
 			--lock to edge
-			self.pos.x = mid(self.pos.x, self.pos_min.x, self.pos_max.x)
-			self.pos.y = mid(self.pos.y, self.pos_min.y, self.pos_max.y)
+			self.x = mid(self.x, self.pos_min.x, self.pos_max.x)
+			self.y = mid(self.y, self.pos_min.y, self.pos_max.y)
 		end,
 
 		cam_pos = function(self)
@@ -48,23 +49,23 @@ function create_camera(target)
 				shk.x = rnd(self.shake_force) - (self.shake_force / 2)
 				shk.y = rnd(self.shake_force) - (self.shake_force / 2)
 			end
-			return self.pos.x - 64 + shk.x, self.pos.y - 64 + shk.y
+			return self.x - 64 + shk.x, self.y - 64 + shk.y
 		end,
 
 		pull_max_x = function(self)
-			return self.pos.x + self.pull_threshold
+			return self.x + self.pull_threshold
 		end,
 
 		pull_min_x = function(self)
-			return self.pos.x - self.pull_threshold
+			return self.x - self.pull_threshold
 		end,
 
 		pull_max_y = function(self)
-			return self.pos.y + self.pull_threshold
+			return self.y + self.pull_threshold
 		end,
 
 		pull_min_y = function(self)
-			return self.pos.y - self.pull_threshold
+			return self.y - self.pull_threshold
 		end,
 
 		shake = function(self, ticks, force)

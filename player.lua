@@ -1,14 +1,13 @@
 
---make the player
-function create_player(x,y)
+function create_player(x, y)
 
 	return {
-		x = x, -- position
+		x = x,
 		y = y,
-		velocity = vector2(0, 0),
+		dx = 0,
+		dy = 0,
 		w = 8, -- sprite size
 		h = 8,
-
 		max_dx = 1, --max x speed
 		max_dy = 2, --max y speed
 
@@ -20,7 +19,6 @@ function create_player(x,y)
 
 		--helper for more complex
 		--button press tracking.
-		--todo: generalize button index.
 		jump_button = create_key(5),
 
 		jump_hold_time = 0,--how long jump is held
@@ -28,6 +26,10 @@ function create_player(x,y)
 		max_jump_press = 15,--max time jump can be held
 		grounded = false,--on ground
 		airtime = 0,--time since grounded
+
+		pushing = false,
+		push_hold_time = 0,
+		push_time = 15,
 
 		--animation definitions.
 		--use with set_anim()
@@ -48,6 +50,10 @@ function create_player(x,y)
 				ticks = 1,
 				frames = {6},
 			},
+			["push"] = {
+				ticks = 1,
+				frames = {11},
+			}
 		},
 
 		curanim = "stand", --currently playing animation
@@ -65,35 +71,34 @@ function create_player(x,y)
 		end,
 
 		--call once per tick.
-		update = function(self)
+		update = function(self, blocks)
+
 			--track button presses
 			local left_pressed = btn(0) --left
 			local right_pressed = btn(1) --right
 
 			--move left/right
 			if left_pressed == true then
-				self.velocity.x -= self.acc
+				self.dx -= self.acc
 				right_pressed = false --handle double press
 				self.flipx = true
 			elseif right_pressed == true then
-				self.velocity.x += self.acc
+				self.dx += self.acc
 				self.flipx = false
 			else
 				if self.grounded then
-					self.velocity.x *= self.dcc
+					self.dx *= self.dcc
 				else
-					self.velocity.x *= self.air_dcc
+					self.dx *= self.air_dcc
 				end
 			end
 
 			--limit walk speed
-			self.velocity.x = mid(-self.max_dx, self.velocity.x, self.max_dx)
-
-			--move in x
-			self.x += self.velocity.x
-
-			--hit walls
+			self.dx = mid(-self.max_dx, self.dx, self.max_dx)
 			collide_side(self)
+			local pushed_block = get_pushed_block(self)
+			--move in x
+			self.x += self.dx
 
 			--jump buttons
 			self.jump_button:update()
@@ -120,7 +125,7 @@ function create_player(x,y)
 					--keep applying jump velocity
 					--until max jump time.
 					if self.jump_hold_time < self.max_jump_press then
-						self.velocity.y = self.jump_speed--keep going up while held
+						self.dy = self.jump_speed--keep going up while held
 					end
 				end
 			else
@@ -128,12 +133,12 @@ function create_player(x,y)
 			end
 
 			--move in y
-			self.velocity.y += self.grav
-			self.velocity.y = mid(-self.max_dy, self.velocity.y, self.max_dy)
-			self.y += self.velocity.y
+			self.dy += self.grav
+			self.dy = mid(-self.max_dy, self.dy, self.max_dy)
+			self.y += self.dy
 
 			--floor
-			if not collide_floor(self) then
+			if not collide_floor(self, blocks) then
 				self:set_anim("jump")
 				self.grounded = false
 				self.airtime += 1
@@ -142,26 +147,36 @@ function create_player(x,y)
 			--roof
 			collide_roof(self)
 
+
+
 			--handle playing correct animation when
 			--on the ground.
 			if self.grounded then
 				if right_pressed then
-					if self.velocity.x < 0 then
+					if self.dx < 0 then
 						--pressing right but still moving left.
 						self:set_anim("slide")
 					else
 						self:set_anim("walk")
 					end
+					if self.pushing then
+						self:set_anim("push")
+					end
 				elseif left_pressed then
-					if self.velocity.x > 0 then
+					if self.dx > 0 then
 						--pressing left but still moving right.
 						self:set_anim("slide")
 					else
 						self:set_anim("walk")
 					end
+					if self.pushing then
+						self:set_anim("push")
+					end
 				else
 					self:set_anim("stand")
 				end
+
+
 			end
 
 			--anim tick

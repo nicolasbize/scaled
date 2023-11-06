@@ -43,3 +43,6 @@ function sqr(a) return a * a end
 --round to the nearest whole number.
 function round(a) return flr(a + 0.5) end
 
+function iswall(x, y)
+	return fget(mget(x / 8, y / 8), 0)
+end
